@@ -3,6 +3,7 @@ const cors = require("cors");
 const User = require("./models/db")
 const bodyParser = require("body-parser");
 const multer = require("multer")
+const path = require("path");
 const postrequest = require("./models/postreqdb")
 const app = express();
 
@@ -10,14 +11,7 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
-
-app.use(cors(
-{
-origin: ["https://deploy-mern-1whq.vercel.app"],
-methods: ["POST", "GET"],
-credentials: true
-}
-));
+app.use("/files", express.static(path.join(__dirname, "files")));
 // Body parser middleware
 app.get("/",cors(),(req,res)=>{
     res.send("hello")
@@ -90,6 +84,67 @@ app.post("/postrequest", upload.single("priceQuotation"), async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+//pdf viewer---------------------------------------------------
+// Serve files from the 'files' directory
+
+
+// Route to serve the file
+app.get("/files/:filename", (req, res) => {
+  const { filename } = req.params;
+  const filePath = path.join(__dirname, "files", filename);
+  
+  // Set the appropriate Content-Type header based on the file extension
+  const contentType = getContentType(filename);
+  res.setHeader("Content-Type", contentType);
+  
+  // Send the file
+  res.sendFile(filePath);
+});
+
+// Helper function to determine Content-Type based on file extension
+function getContentType(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  switch (ext) {
+    case ".pdf":
+      return "application/pdf";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    // Add more cases for other file types as needed
+    default:
+      return "application/octet-stream"; // Default to binary data
+  }
+}
+// Route to get request details by ID--------------------------------------
+app.get("/requests/:requestId", async (req, res) => {
+  const { requestId } = req.params;
+
+  try {
+    const request = await postrequest.findById(requestId); // Assuming you are using Mongoose
+    if (!request) {
+      return res.status(404).json({ message: "Request not found" });
+    }
+
+    res.json(request);
+  } catch (error) {
+    console.error("Error fetching request details:", error);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+// Route to fetch all requests
+app.get("/allrequests", async (req, res) => {
+  try {
+    // Retrieve all requests from the database
+    const requests = await postrequest.find();
+    res.json(requests); // Return the requests as JSON response
+  } catch (error) {
+    console.error("Error fetching requests:", error);
+    res.status(500).json({ message: "Error fetching requests" });
+  }
+});
+
 
 //user login authenticaton-------------------------------------
 app.post("/login", async (req, res) => {
@@ -98,7 +153,7 @@ app.post("/login", async (req, res) => {
     const user = await User.findOne({ email: email.trim() });
     if (user) {
       if (user.password === password) {
-        res.json({ exists: true, role: user.role, name: user.name, email: user.email }); // Include role in the response
+        res.json({ exists: true, role: user.role, name: user.name, email: user.email,designation: user.designation }); // Include role in the response
       } else {
         res.json("Incorrect password"); // Password incorrect
       }
@@ -213,23 +268,34 @@ app.put("/requests/:id", async (req, res) => {
   }
 });
 
-
 //show requests to users------------------------
-app.get("/myrequests", async (req, res) => {
+app.get("/myrequests/:username", async (req, res) => {
   try {
-    // Fetch requests belonging to the logged-in user
-    const myRequests = await postrequest.find();
+    // Fetch the logged-in user's username from the request params
+    const { username } = req.params;
+    // Fetch requests where the username matches any of the roles (Approver1, Approver2, Approver3, or observer)
+    const myRequests = await postrequest.find({
+      $or: [
+        { Approver1: username },
+        { Approver2: username },
+        { Approver3: username },
+        { observer: username},
+        { requester: username},
+      ],
+    });
 
-    if (!myRequests) {
+    if (!myRequests || myRequests.length === 0) {
       return res
         .status(404)
         .json({ message: "No requests found for this user" });
     }
     res.json(myRequests);
   } catch (e) {
+    console.error("Error fetching requests:", e);
     res.status(500).json({ message: "Internal server error" });
   }
 });
+
 
 //Add user--------------------------------------
 app.post("/adduser", async (req, res) => {
