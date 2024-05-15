@@ -88,18 +88,31 @@ app.post("/postrequest", upload.single("priceQuotation"), async (req, res) => {
 // Serve files from the 'files' directory
 
 
-// Route to serve the file
-app.get("/files/:filename", (req, res) => {
+// Route to serve the PDF file from the database
+app.get("/files/:filename", async (req, res) => {
   const { filename } = req.params;
-  const filePath = path.join(__dirname, "files", filename);
   
-  // Set the appropriate Content-Type header based on the file extension
-  const contentType = getContentType(filename);
-  res.setHeader("Content-Type", contentType);
-  
-  // Send the file
-  res.sendFile(filePath);
+  try {
+    // Fetch the file from the database based on the filename
+    const document = await postrequest.findOne({ priceQuotation: filename });
+    
+    if (document) {
+      // Set the appropriate Content-Type header based on the file type
+      const contentType = 'application/pdf'; // Assuming PDF files
+      
+      // Send the file data as the response
+      res.setHeader("Content-Type", contentType);
+      res.send(document.priceQuotation);
+    } else {
+      // If the file is not found, send a 404 Not Found response
+      res.status(404).json({ error: "File not found" });
+    }
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
+
 
 // Helper function to determine Content-Type based on file extension
 function getContentType(filename) {
