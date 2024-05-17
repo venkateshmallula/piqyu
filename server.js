@@ -147,7 +147,6 @@ app.get("/requests/:requestId", async (req, res) => {
 app.get("/approved", async (req, res) => {
   try {
     const requests = await postrequest.find({ status: "Approved" })
-    console.log(requests);
     res.json(requests);
   } catch (error) {
     res.status(500).json({ message: "Error fetching approved requests", error });
