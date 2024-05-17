@@ -7,6 +7,7 @@ const path = require("path");
 const postrequest = require("./models/postreqdb")
 const app = express();
 
+
 app.use(express.json());
 app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
@@ -19,7 +20,6 @@ app.get("/",cors(),(req,res)=>{
 
 //Database connection--------------------------------------
 const mongoose = require("mongoose");
-const user = require("./models/db");
 
 mongoose
   .connect(
@@ -86,8 +86,6 @@ app.post("/postrequest", upload.single("priceQuotation"), async (req, res) => {
 });
 //pdf viewer---------------------------------------------------
 // Serve files from the 'files' directory
-
-
 // Route to serve the PDF file from the database
 app.get("/files/:filename", async (req, res) => {
   const { filename } = req.params;
@@ -112,7 +110,6 @@ app.get("/files/:filename", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
 
 // Helper function to determine Content-Type based on file extension
 function getContentType(filename) {
@@ -146,6 +143,18 @@ app.get("/requests/:requestId", async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+// Endpoint to get approved requests with pagination
+app.get("/approved", async (req, res) => {
+  try {
+    const requests = await postrequest.find({ status: "Approved" })
+    console.log(requests);
+    res.json(requests);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching approved requests", error });
+  }
+});
+
+
 // Route to fetch all requests
 app.get("/allrequests", async (req, res) => {
   try {
@@ -157,7 +166,6 @@ app.get("/allrequests", async (req, res) => {
     res.status(500).json({ message: "Error fetching requests" });
   }
 });
-
 
 //user login authenticaton-------------------------------------
 app.post("/login", async (req, res) => {
@@ -308,7 +316,6 @@ app.get("/myrequests/:username", async (req, res) => {
     res.status(500).json({ message: "Internal server error" });
   }
 });
-
 
 //Add user--------------------------------------
 app.post("/adduser", async (req, res) => {
