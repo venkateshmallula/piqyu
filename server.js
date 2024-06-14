@@ -2,9 +2,12 @@ const express = require("express");
 const cors = require("cors");
 const User = require("./models/db")
 const bodyParser = require("body-parser");
+const bcrypt = require("bcryptjs");
 const multer = require("multer")
 const path = require("path");
+const fs = require('fs');
 const postrequest = require("./models/postreqdb")
+const PrivacyPolicy = require("./models/privacymodel");
 const app = express();
 
 
@@ -13,6 +16,7 @@ app.use(bodyParser.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cors());
 app.use("/files", express.static(path.join(__dirname, "files")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Body parser middleware
 app.get("/",cors(),(req,res)=>{
     res.send("hello")
@@ -44,6 +48,18 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({ storage: storage });
+
+// multer setup for privacy files-------------------------------------------
+const privacyFilesStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, "uploads/"); // Ensure this is the correct path
+    },
+    filename: function (req, file, cb) {
+        cb(null, "privacypolicy.pdf");
+    },
+});
+
+const privacyFiles = multer({ storage: privacyFilesStorage });
 
 // Post request route
 app.post("/postrequest", upload.single("priceQuotation"), async (req, res) => {
@@ -93,7 +109,6 @@ app.get("/files/:filename", async (req, res) => {
   try {
     // Fetch the file from the database based on the filename
     const document = await postrequest.findOne({ priceQuotation: filename });
-    
     if (document) {
       // Set the appropriate Content-Type header based on the file type
       const contentType = 'application/pdf'; // Assuming PDF files
@@ -168,12 +183,20 @@ app.get("/allrequests", async (req, res) => {
 
 //user login authenticaton-------------------------------------
 app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { number, password } = req.body;
   try {
-    const user = await User.findOne({ email: email.trim() });
+    const user = await User.findOne({ mobile_number: number.trim() });
     if (user) {
-      if (user.password === password) {
-        res.json({ exists: true, role: user.role, name: user.name, email: user.email,designation: user.designation }); // Include role in the response
+      // Compare the provided password with the hashed password stored in the database
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (isMatch) {
+        res.json({
+          exists: true,
+          role: user.role,
+          name: user.name,
+          email: user.email,
+          designation: user.designation,
+        }); // Include role in the response
       } else {
         res.json("Incorrect password"); // Password incorrect
       }
@@ -185,6 +208,7 @@ app.post("/login", async (req, res) => {
     res.status(500).json("internal server error");
   }
 });
+
 //Display the requests to the admin----------------------------------------------
 // Fetching pending requests in the backend
 app.get("/pendingrequests/:username", async (req, res) => {
@@ -318,32 +342,47 @@ app.get("/myrequests/:username", async (req, res) => {
 
 //Add user--------------------------------------
 app.post("/adduser", async (req, res) => {
-  const { fullName, email, password, role,employeeId,mobileNumber,location,designation } = req.body;
-  // Further processing or database operations can be performed here
+  const {
+    fullName,
+    email,
+    password,
+    role,
+    employeeId,
+    mobileNumber,
+    location,
+    designation,
+  } = req.body;
+  console.log(req.body);
+
   try {
-    const check = await User.findOne({ email: email });
+    const check = await User.findOne({ mobile_number: mobileNumber });
     if (!check) {
+      // Hash the password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
       await User.create({
         name: fullName,
         email: email,
-        password: password,
+        password: hashedPassword,
         role: role,
         employee_id: employeeId,
         mobile_number: mobileNumber,
         location: location,
-        designation : designation
+        designation: designation,
       });
 
       // Send response if needed
-      res.status(200).json({ message: "Request posted successfully" });
+      res.status(200).json({ message: "User added successfully" });
     } else {
-      res.json("Request already exist");
+      res.json("User already exists");
     }
   } catch (error) {
     console.error("Error:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 // GET user by email--------------------------------------------
 app.get("/user/:email", async (req, res) => {
   try {
@@ -380,30 +419,38 @@ app.put("/user/:id", async (req, res) => {
     employee_id,
     mobile_number,
     location,
-    designation
+    designation,
   } = req.body;
+
   try {
-    const updatedUser = await User.findByIdAndUpdate(
-      id,
-      {
-        name,
-        email,
-        password,
-        role,
-        employee_id,
-        mobile_number,
-        location,
-        designation
-      },
-      { new: true }
-    );
+    // Create an object to hold the fields to update
+    const updatedFields = {
+      name,
+      email,
+      role,
+      employee_id,
+      mobile_number,
+      location,
+      designation,
+    };
+
+    // Hash the password if it's being updated
+    if (password) {
+      const saltRounds = 10;
+      const hashedPassword = await bcrypt.hash(password, saltRounds);
+      updatedFields.password = hashedPassword;
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(id, updatedFields, {
+      new: true,
+    });
+
     res.json(updatedUser);
   } catch (error) {
     console.error("Error updating user:", error);
     res.status(500).json({ error: "Error updating user" });
   }
 });
-
 
 // Route to update user details by email---------------------------------------
 app.put('/user/:email', async (req, res) => {
@@ -420,9 +467,48 @@ app.put('/user/:email', async (req, res) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 });
-const port = 5000
+// Privacy & policy files
+app.post("/uploadPrivacyPolicy",privacyFiles.single("privacyPolicy"),async (req, res) => {
+    const file = req.file;
+    console.log(req.file);
+    if (!file) {
+      return res.status(400).send("No file uploaded.");
+    }
+    try {
+      const existingFile = await PrivacyPolicy.findOne({ fileName: "privacypolicy.pdf" });
+      if(existingFile){
+        await PrivacyPolicy.deleteOne({ _id: existingFile._id });
+      }
+      // Save the file details to the database
+      const privacyPolicy = await PrivacyPolicy.create({
+        fileName: "privacypolicy.pdf",
+      });
+      res.status(200).send({ message: "File uploaded successfully", privacyPolicy });
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
+  }
+);
+// Route to retrieve the privacy policy PDF
+app.get("/privacyPolicy", async (req, res) => {
+  try {
+    const fileName = "privacypolicy.pdf";
+    const uploadsDir = path.join(__dirname, "uploads"); // Ensure this matches the uploads directory
+    const filePath = path.join(uploadsDir, fileName); // Construct the absolute path to the file
 
-app.listen(port, () => {
-  console.log(`server is running on ${port}`);
+    res.setHeader("Content-Type", "application/pdf");
+    res.sendFile(filePath); // Send the file using the constructed path
+  } catch (error) {
+    console.error("Error:", error);
+    res.status(500).send("Internal server error");
+  }
+});
+
+
+const PORT = 5000;
+
+app.listen(PORT, () => {
+  console.log(`server is running on ${PORT}`);
 });
 
