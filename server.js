@@ -1,15 +1,14 @@
 const express = require("express");
 const cors = require("cors");
-const User = require("./models/db")
+const User = require("./models/db");
 const bodyParser = require("body-parser");
 const bcrypt = require("bcryptjs");
-const multer = require("multer")
+const multer = require("multer");
 const path = require("path");
-const fs = require('fs');
-const postrequest = require("./models/postreqdb")
+const fs = require("fs");
+const postrequest = require("./models/postreqdb");
 const PrivacyPolicy = require("./models/privacymodel");
 const app = express();
-
 
 app.use(express.json());
 app.use(bodyParser.json());
@@ -18,9 +17,9 @@ app.use(cors());
 app.use("/files", express.static(path.join(__dirname, "files")));
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Body parser middleware
-app.get("/",cors(),(req,res)=>{
-    res.send("hello")
-})
+app.get("/", cors(), (req, res) => {
+  res.send("hello");
+});
 
 //Database connection--------------------------------------
 const mongoose = require("mongoose");
@@ -51,12 +50,12 @@ const upload = multer({ storage: storage });
 
 // multer setup for privacy files-------------------------------------------
 const privacyFilesStorage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, "uploads/"); // Ensure this is the correct path
-    },
-    filename: function (req, file, cb) {
-        cb(null, "privacypolicy.pdf");
-    },
+  destination: function (req, file, cb) {
+    cb(null, "./uploads"); // Ensure this is the correct path
+  },
+  filename: function (req, file, cb) {
+    cb(null, file.originalname);
+  },
 });
 
 const privacyFiles = multer({ storage: privacyFilesStorage });
@@ -105,14 +104,14 @@ app.post("/postrequest", upload.single("priceQuotation"), async (req, res) => {
 // Route to serve the PDF file from the database
 app.get("/files/:filename", async (req, res) => {
   const { filename } = req.params;
-  
+
   try {
     // Fetch the file from the database based on the filename
     const document = await postrequest.findOne({ priceQuotation: filename });
     if (document) {
       // Set the appropriate Content-Type header based on the file type
-      const contentType = 'application/pdf'; // Assuming PDF files
-      
+      const contentType = "application/pdf"; // Assuming PDF files
+
       // Send the file data as the response
       res.setHeader("Content-Type", contentType);
       res.send(document.priceQuotation);
@@ -161,13 +160,14 @@ app.get("/requests/:requestId", async (req, res) => {
 // Endpoint to get approved requests with pagination
 app.get("/approved", async (req, res) => {
   try {
-    const requests = await postrequest.find({ status: "Approved" })
+    const requests = await postrequest.find({ status: "Approved" });
     res.json(requests);
   } catch (error) {
-    res.status(500).json({ message: "Error fetching approved requests", error });
+    res
+      .status(500)
+      .json({ message: "Error fetching approved requests", error });
   }
 });
-
 
 // Route to fetch all requests
 app.get("/allrequests", async (req, res) => {
@@ -215,7 +215,10 @@ app.get("/pendingrequests/:username", async (req, res) => {
   const { username } = req.params;
   try {
     // Find all records that match the username in the postrequest collection
-    const pendingRequests = await postrequest.find({ Approver: username , status: "pending"});
+    const pendingRequests = await postrequest.find({
+      Approver: username,
+      status: "pending",
+    });
 
     res.json(pendingRequests);
   } catch (error) {
@@ -261,7 +264,10 @@ app.put("/requests/:id/forward", async (req, res) => {
         { new: true }
       );
       flagMessage = "Approver2 set successfully";
-    } else if (!existingRequest.Approver3 && req.body.Approver !== "Finance team") {
+    } else if (
+      !existingRequest.Approver3 &&
+      req.body.Approver !== "Finance team"
+    ) {
       // If Approver2 is not null and Approver3 is null, update Approver3 with the value from the request body
       await postrequest.findByIdAndUpdate(
         requestId,
@@ -323,8 +329,8 @@ app.get("/myrequests/:username", async (req, res) => {
         { Approver1: username },
         { Approver2: username },
         { Approver3: username },
-        { observer: username},
-        { requester: username},
+        { observer: username },
+        { requester: username },
       ],
     });
 
@@ -453,55 +459,76 @@ app.put("/user/:id", async (req, res) => {
 });
 
 // Route to update user details by email---------------------------------------
-app.put('/user/:email', async (req, res) => {
+app.put("/user/:email", async (req, res) => {
   const { email } = req.params;
   const userData = req.body;
   try {
-    const user = await User.findOneAndUpdate({ email }, userData, { new: true });
+    const user = await User.findOneAndUpdate({ email }, userData, {
+      new: true,
+    });
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      return res.status(404).json({ message: "User not found" });
     }
-    res.status(200).json({ message: 'User details updated successfully', user });
+    res
+      .status(200)
+      .json({ message: "User details updated successfully", user });
   } catch (error) {
-    console.error('Error updating user data:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error updating user data:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
-// Privacy & policy files
-app.post("/uploadPrivacyPolicy",privacyFiles.single("privacyPolicy"),async (req, res) => {
-    const file = req.file;
-    console.log(req.file);
-    if (!file) {
-      return res.status(400).send("No file uploaded.");
-    }
+
+app.post(
+  "/uploadPrivacyPolicy",
+  privacyFiles.single("file"),
+  (req, res) => {
     try {
-      const existingFile = await PrivacyPolicy.findOne({ fileName: "privacypolicy.pdf" });
-      if(existingFile){
-        await PrivacyPolicy.deleteOne({ _id: existingFile._id });
+      const file = req.file;
+      if (!file) {
+        return res.status(400).json({ error: "No file uploaded" });
       }
-      // Save the file details to the database
-      const privacyPolicy = await PrivacyPolicy.create({
-        fileName: "privacypolicy.pdf",
-      });
-      res.status(200).send({ message: "File uploaded successfully", privacyPolicy });
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      res.status(500).json({ error: "Internal server error" });
+      // Handle file storage or other logic here
+      // Example: Save file details to a database
+      res.status(200).json({ message: "File uploaded successfully" });
+    } catch (err) {
+      console.error("Error uploading file:", err);
+      res.status(500).json({ error: "Failed to upload file" });
     }
   }
 );
-// Route to retrieve the privacy policy PDF
-app.get("/privacyPolicy", async (req, res) => {
-  try {
-    const fileName = "privacypolicy.pdf";
-    const uploadsDir = path.join(__dirname, "uploads"); // Ensure this matches the uploads directory
-    const filePath = path.join(uploadsDir, fileName); // Construct the absolute path to the file
+// Endpoint to fetch all privacy policy files
+app.get('/privacyPolicies', (req, res) => {
+  const uploadsDir = path.join(__dirname, 'uploads');
 
-    res.setHeader("Content-Type", "application/pdf");
-    res.sendFile(filePath); // Send the file using the constructed path
+  try {
+    // Read directory to get all file names
+    fs.readdir(uploadsDir, (err, files) => {
+      if (err) {
+        console.error('Error reading uploads directory:', err);
+        return res.status(500).json({ error: 'Failed to fetch privacy policies' });
+      }
+
+      // Assuming files array contains all privacy policy filenames
+      res.status(200).json({ files });
+    });
   } catch (error) {
-    console.error("Error:", error);
-    res.status(500).send("Internal server error");
+    console.error('Error fetching privacy policies:', error);
+    res.status(500).json({ error: 'Failed to fetch privacy policies' });
+  }
+});
+
+// Endpoint to handle file downloads
+app.get('/privacyPolicies/:fileName', (req, res) => {
+  const fileName = req.params.fileName;
+  const filePath = path.join(__dirname, 'uploads', fileName);
+
+  // Check if the file exists
+  if (fileName && fileName !== 'undefined') {
+    // Send the file to the client
+    res.sendFile(filePath);
+  } else {
+    // File does not exist
+    res.status(404).json({ error: 'File not found' });
   }
 });
 
@@ -511,4 +538,3 @@ const PORT = 5000;
 app.listen(PORT, () => {
   console.log(`server is running on ${PORT}`);
 });
-
